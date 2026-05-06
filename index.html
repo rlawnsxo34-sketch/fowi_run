@@ -26,8 +26,8 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 1000 },
-            debug: false // 이 값을 true로 바꾸면 충돌 판정 박스가 보입니다!
+            gravity: { y: 1200 }, // 점프 느낌을 살리기 위해 중력 살짝 증가
+            debug: false // 충돌 박스 확인용
         }
     },
     scene: {
@@ -45,30 +45,42 @@ let obstacleGroup;
 let itemGroup;
 let gameOver = false;
 
-// 2. 프리로드 (이미지 불러오기)
+// 🌟 추가된 전역 변수
+let score = 0;
+let scoreText;
+let fireWall;      // 뒤에서 쫓아오는 불길
+let fireDistance = 0; // 불길과 캐릭터 사이의 기준 거리 (0이면 닿음)
+let maxFireDistance = 400; // 불길이 가장 멀어질 수 있는 거리
+
 function preload() {
     this.load.image('bg', 'bg_forest.png');
     this.load.image('player', 'fowi_run.png');
-    
-    // 🌟 추가: 장애물과 아이템 이미지 로드
     this.load.image('obstacle', 'obs_tree.png'); 
     this.load.image('item', 'item_water.png'); 
 }
 
-// 3. 크리에이트 (객체 생성 및 규칙 설정)
 function create() {
     background = this.add.tileSprite(400, 200, 800, 400, 'bg');
 
-    player = this.physics.add.sprite(150, 300, 'player');
+    // 🌟 추가: 뒤에서 쫓아오는 불길 이펙트 (임시로 빨간색 사각형 사용)
+    // 실제로는 불타는 이미지 타일을 쓰면 더 좋습니다.
+    fireWall = this.add.rectangle(-100, 200, 200, 400, 0xff0000, 0.7);
+    this.physics.add.existing(fireWall);
+    fireWall.body.allowGravity = false;
+    fireDistance = 250; // 시작 시 불길과의 거리
+
+    player = this.physics.add.sprite(200, 300, 'player'); // x위치를 200으로 조정
     player.setScale(0.5);
     player.setCollideWorldBounds(true);
-    this.physics.world.bounds.height = 350;
+    // 바닥 높이 정확히 지정
+    this.physics.world.bounds.height = 370;
 
-    // 🌟 추가: 장애물과 아이템을 관리할 그룹 생성
     obstacleGroup = this.physics.add.group();
     itemGroup = this.physics.add.group();
 
-    // 🌟 추가: 1.5초(1500ms)마다 장애물/아이템 생성 함수(spawnObjects) 실행
+    // 🌟 추가: 점수 UI 텍스트
+    scoreText = this.add.text(16, 16, '숲 복구 점수: 0', { fontSize: '24px', fill: '#FFF', stroke: '#000', strokeThickness: 3 });
+
     this.time.addEvent({
         delay: 1500,
         callback: spawnObjects,
@@ -76,33 +88,62 @@ function create() {
         loop: true
     });
 
-    // 🌟 추가: 충돌 규칙 설정
-    // 1) 플레이어와 장애물이 '부딪히면(collider)' hitObstacle 함수 실행
+    // 충돌 처리
     this.physics.add.collider(player, obstacleGroup, hitObstacle, null, this);
-    
-    // 2) 플레이어와 아이템이 '겹치면(overlap)' collectItem 함수 실행
     this.physics.add.overlap(player, itemGroup, collectItem, null, this);
 
-    // 모바일 터치 조작 (기존과 동일)
+    // 🛠️ 수정: 점프 로직 개선 (PC 마우스 클릭 & 모바일 터치)
     this.input.on('pointerdown', function (pointer) {
-        if (pointer.x > config.scale.width / 2 && player.body.onFloor()) {
-            player.setVelocityY(-600);
-        } else if (pointer.x <= config.scale.width / 2 && player.body.onFloor()) {
-            player.setScale(0.5, 0.25);
+        if (gameOver) return;
+
+        // body.onFloor() 대신 바닥에 막혀있는지 확인하는 더 확실한 속성 사용
+        let isGrounded = player.body.blocked.down || player.body.touching.down;
+
+        if (pointer.x > config.scale.width / 2) {
+            // 오른쪽 화면 터치: 점프
+            if (isGrounded) {
+                player.setVelocityY(-650); // 점프력 증가
+            }
+        } else {
+            // 왼쪽 화면 터치: 슬라이드 (크기 줄이기)
+            if (isGrounded) {
+                player.setScale(0.5, 0.25);
+                // 슬라이드 시 충돌 박스(Hitbox)도 줄여줍니다.
+                player.body.setSize(player.width, player.height / 2);
+                player.body.setOffset(0, player.height / 2);
+            }
         }
     });
+
     this.input.on('pointerup', function () {
+        if (gameOver) return;
         player.setScale(0.5, 0.5);
+        // 슬라이드가 끝나면 충돌 박스 원상 복구
+        player.body.setSize(player.width, player.height);
+        player.body.setOffset(0, 0);
     });
 }
 
-// 4. 업데이트 (화면 갱신)
 function update() {
-    if (gameOver) return; // 게임 오버면 배경 스크롤 멈춤
+    if (gameOver) return;
 
-    background.tilePositionX += 5;
+    // 점수에 따라 배경과 장애물 속도 증가 (난이도 조절)
+    let speedBonus = Math.floor(score / 100); 
+    background.tilePositionX += (5 + speedBonus * 0.5);
 
-    // 🌟 추가: 화면 밖으로 나간 장애물/아이템 메모리에서 삭제 (최적화)
+    // 🌟 산불(불길) 추격 시스템 로직
+    // 1. 불길은 서서히 다가옵니다.
+    fireDistance -= 0.5; 
+    
+    // 2. 불길의 실제 x 위치 업데이트 (플레이어 위치 기준)
+    fireWall.x = player.x - fireDistance;
+
+    // 3. 불길이 플레이어를 삼켰을 때 게임 오버
+    if (fireDistance <= 0) {
+        triggerGameOver.call(this);
+    }
+
+    // 화면 밖 객체 제거
     obstacleGroup.getChildren().forEach(function(obs) {
         if (obs.x < -50) obs.destroy();
     });
@@ -111,43 +152,76 @@ function update() {
     });
 }
 
-// ================= [새로 추가된 함수들] =================
-
-// 장애물 & 아이템 생성 함수
 function spawnObjects() {
     if (gameOver) return;
 
-    // 70% 확률로 장애물, 30% 확률로 아이템 생성
-    if (Math.random() > 0.3) {
-        // 하단 장애물 생성
+    let speedBonus = Math.floor(score / 100);
+    let objSpeed = -300 - (speedBonus * 20);
+
+    if (Math.random() > 0.4) {
         let obs = obstacleGroup.create(850, 320, 'obstacle');
         obs.setScale(0.4);
-        obs.setVelocityX(-300); // 왼쪽으로 다가오는 속도
-        obs.body.allowGravity = false; // 장애물은 중력 무시
-        obs.setImmovable(true); // 플레이어가 밀어도 밀리지 않음
+        obs.setVelocityX(objSpeed);
+        obs.body.allowGravity = false;
+        obs.setImmovable(true);
+        // 장애물 충돌 박스를 이미지 크기보다 조금 작게 조정 (더 공정한 판정을 위해)
+        obs.body.setSize(obs.width * 0.8, obs.height * 0.8);
     } else {
-        // 공중 아이템 생성 (점프해서 먹도록 높이 조절)
-        let item = itemGroup.create(850, 200, 'item');
+        // 아이템은 장애물보다 조금 높게 생성
+        let item = itemGroup.create(850, 180, 'item');
         item.setScale(0.3);
-        item.setVelocityX(-300);
+        item.setVelocityX(objSpeed);
         item.body.allowGravity = false;
     }
 }
 
-// 장애물과 부딪혔을 때 실행되는 함수
 function hitObstacle(player, obstacle) {
-    this.physics.pause(); // 모든 물리 엔진(움직임) 정지
-    player.setTint(0xff0000); // 캐릭터를 붉은색으로 물들임 (데미지 효과)
-    gameOver = true;
+    // 🛠️ 수정: 장애물에 부딪히면 즉시 죽는 것이 아니라 불길이 확 다가옵니다!
+    obstacle.disableBody(true, true); // 부딪힌 장애물 삭제
+    player.setTint(0xff9999); // 캐릭터 깜빡임 효과 (빨갛게)
     
-    // 화면에 게임오버 텍스트 띄우기
-    this.add.text(400, 200, '앗, 산불에 닿았어요!', { fontSize: '40px', fill: '#FFF', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5);
+    // 0.2초 후 원래 색으로 복구
+    this.time.delayedCall(200, () => { if(!gameOver) player.clearTint(); });
+
+    // 불길이 확 다가옴 (페널티)
+    fireDistance -= 80; 
 }
 
-// 아이템을 먹었을 때 실행되는 함수
 function collectItem(player, item) {
-    item.disableBody(true, true); // 화면에서 아이템을 즉시 지움
-    // 나중에 여기에 점수 올라가는 로직을 추가할 수 있습니다!
+    item.disableBody(true, true);
+    
+    // 🌟 추가: 아이템 획득 효과
+    score += 10;
+    scoreText.setText('숲 복구 점수: ' + score);
+
+    // 물방울(아이템)을 먹으면 불길을 조금 밀어냅니다! (최대 거리 제한)
+    fireDistance += 30;
+    if (fireDistance > maxFireDistance) fireDistance = maxFireDistance;
+}
+
+// 🌟 추가: 게임 오버 처리 전용 함수
+function triggerGameOver() {
+    gameOver = true;
+    this.physics.pause();
+    player.setTint(0x555555); // 캐릭터 까맣게 탐
+    
+    // 화면 중앙에 텍스트 표시
+    let cx = config.scale.width / 2;
+    let cy = config.scale.height / 2;
+    
+    // 배경을 어둡게
+    this.add.rectangle(cx, cy, config.scale.width, config.scale.height, 0x000000, 0.7);
+
+    this.add.text(cx, cy - 40, '산불이 번졌습니다...', { fontSize: '32px', fill: '#FF5555' }).setOrigin(0.5);
+    this.add.text(cx, cy + 10, '최종 점수: ' + score, { fontSize: '24px', fill: '#FFF' }).setOrigin(0.5);
+    this.add.text(cx, cy + 60, '[화면을 터치하여 다시 시작]', { fontSize: '20px', fill: '#AAAAAA' }).setOrigin(0.5);
+
+    // 터치 시 재시작 로직 추가
+    this.input.once('pointerdown', () => {
+        score = 0;
+        gameOver = false;
+        this.scene.restart();
+    });
 }
 </script>
 
