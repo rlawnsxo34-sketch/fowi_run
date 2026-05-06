@@ -50,7 +50,7 @@ let score = 0;
 let scoreText;
 let fireWall;      // 뒤에서 쫓아오는 불길
 let fireDistance = 0; // 불길과 캐릭터 사이의 기준 거리 (0이면 닿음)
-let maxFireDistance = 400; // 불길이 가장 멀어질 수 있는 거리
+let maxFireDistance = 500; // 불길이 가장 멀어질 수 있는 거리
 
 function preload() {
     this.load.image('bg', 'bg_forest.png');
@@ -67,7 +67,7 @@ function create() {
     fireWall = this.add.rectangle(-100, 200, 200, 400, 0xff0000, 0.7);
     this.physics.add.existing(fireWall);
     fireWall.body.allowGravity = false;
-    fireDistance = 250; // 시작 시 불길과의 거리
+    fireDistance = 350; // 시작 시 불길과의 거리
 
     player = this.physics.add.sprite(200, 300, 'player'); // x위치를 200으로 조정
     player.setScale(0.5);
@@ -133,7 +133,7 @@ function update() {
 
     // 🌟 산불(불길) 추격 시스템 로직
     // 1. 불길은 서서히 다가옵니다.
-    fireDistance -= 0.5; 
+    fireDistance -= 0.1; 
     
     // 2. 불길의 실제 x 위치 업데이트 (플레이어 위치 기준)
     fireWall.x = player.x - fireDistance;
@@ -184,7 +184,7 @@ function hitObstacle(player, obstacle) {
     this.time.delayedCall(200, () => { if(!gameOver) player.clearTint(); });
 
     // 불길이 확 다가옴 (페널티)
-    fireDistance -= 80; 
+    fireDistance -= 40; 
 }
 
 function collectItem(player, item) {
