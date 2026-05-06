@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>숲의 파수꾼: FoWI 소방관</title>
+    <!-- Phaser.js 라이브러리 불러오기 -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; }
+        canvas { display: block; margin: 0 auto; }
+    </style>
+</head>
+<body>
+
+<script>
+// 1. 게임 기본 설정 (Config)
+const config = {
+    type: Phaser.AUTO, // WebGL을 기본으로 하되 안되면 Canvas 사용
+    scale: {
+        mode: Phaser.Scale.FIT, // 모바일 화면에 맞게 비율 유지하며 꽉 채움
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: 800,  // 게임의 논리적 가로 크기
+        height: 400  // 게임의 논리적 세로 크기
+    },
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: 1000 }, // 중력 설정 (캐릭터가 아래로 떨어지는 힘)
+            debug: false // true로 바꾸면 충돌 박스가 보임 (테스트용)
+        }
+    },
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
+    }
+};
+
+const game = new Phaser.Game(config);
+
+// 전역 변수 설정
+let player;
+let background;
+let isJumping = false;
+
+// 2. 프리로드 (Preload): 게임 시작 전 이미지, 소리 등을 미리 불러옵니다.
+function preload() {
+    // 배경 이미지 로드 (파일 이름을 본인의 파일명에 맞게 수정하세요)
+    // 예: 숲길 배경 이미지
+    this.load.image('bg', 'bg_forest.png'); 
+
+    // 캐릭터 이미지 로드
+    // 스프라이트 시트(여러 포즈가 한 장에 있는 이미지)를 자르기 어려우시다면
+    // 우선 달리는 포즈 이미지 하나만 'player.png'로 저장해서 사용해보세요.
+    this.load.image('player', 'fowi_run.png'); 
+}
+
+// 3. 크리에이트 (Create): 화면에 객체를 배치하고 초기 설정을 합니다.
+function create() {
+    // 배경 배치 (TileSprite를 사용하면 무한 스크롤이 가능합니다)
+    // 위치(0,0)에 게임 크기(800x400)만큼 배경을 그립니다.
+    background = this.add.tileSprite(400, 200, 800, 400, 'bg');
+
+    // 플레이어 배치 및 물리 엔진 적용
+    player = this.physics.add.sprite(150, 300, 'player');
+    
+    // 플레이어 크기 조절 (이미지가 너무 크면 줄여줍니다)
+    player.setScale(0.5); 
+    
+    // 바닥과 화면 밖으로 나가지 않도록 충돌 설정
+    player.setCollideWorldBounds(true); 
+    // 바닥 위치를 화면 아래쪽으로 제한 (게임 높이가 400이므로 350정도로 설정)
+    this.physics.world.bounds.height = 350;
+
+    // 모바일 터치 이벤트 (화면 오른쪽 터치 시 점프)
+    this.input.on('pointerdown', function (pointer) {
+        // 화면 오른쪽(가운데 기준)을 터치했고, 캐릭터가 바닥에 닿아있을 때만 점프
+        if (pointer.x > config.scale.width / 2 && player.body.onFloor()) {
+            player.setVelocityY(-600); // 위로 솟구치는 힘 (점프력)
+        }
+        // 화면 왼쪽 터치 시 슬라이드 (임시로 크기 줄이기)
+        else if (pointer.x <= config.scale.width / 2 && player.body.onFloor()) {
+            player.setScale(0.5, 0.25); // 높이를 절반으로 줄임
+        }
+    });
+
+    // 터치가 끝나면 슬라이드 원상복구
+    this.input.on('pointerup', function () {
+        player.setScale(0.5, 0.5); 
+    });
+}
+
+// 4. 업데이트 (Update): 매 프레임(보통 1초에 60번)마다 실행되며 게임 상태를 바꿉니다.
+function update() {
+    // 배경을 왼쪽으로 계속 이동시켜 캐릭터가 달리는 것처럼 보이게 함
+    background.tilePositionX += 5; // 속도 조절
+}
+</script>
+
+</body>
+</html>
